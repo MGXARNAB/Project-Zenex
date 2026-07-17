@@ -1,1 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ZenexCalc™</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+*{ -webkit-font-smoothing:antialiased; }
+body{font-family:'Inter',sans-serif; overscroll-behavior:none; background:#07070B; }
+.mono{font-family:'JetBrains Mono',monospace;}
+::-webkit-scrollbar{display:none}
+.blob{ will-change:transform; transform:translateZ(0); }
+@keyframes f1{0%,100%{transform:translate3d(0,0,0) scale(1)}33%{transform:translate3d(70px,-50px,0) scale(1.08)}66%{transform:translate3d(-30px,40px,0) scale(0.96)}}
+@keyframes f2{0%,100%{transform:translate3d(0,0,0) scale(1)}33%{transform:translate3d(-60px,50px,0) scale(1.1)}66%{transform:translate3d(40px,-30px,0) scale(0.92)}}
+.a1{animation:f1 18s ease-in-out infinite}
+.a2{animation:f2 22s ease-in-out infinite}
+.glass{ -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px); }
+.btn{ transform:translateZ(0); backface-visibility:hidden; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useCallback}=React;
+const {motion,AnimatePresence}=window.Motion;
 
+function useMobile(bp=1024){
+  const [m,setM]=useState(false);
+  useEffect(()=>{const c=()=>setM(innerWidth<bp); c(); addEventListener('resize',c); return()=>removeEventListener('resize',c)},[]);
+  return m;
+}
+
+const Button = React.memo(function({label,onClick,variant="n",span=1,dark}){
+  const [g,setG]=useState(false);
+  const tap=useCallback(()=>{
+    setG(true); setTimeout(()=>setG(false),300);
+    onClick?.();
+  },[onClick]);
+  const base="btn relative w-full h-[60px] rounded-[18px] border flex items-center justify-center text-[19px] font-[500] select-none";
+  let cls="";
+  if(dark){
+    if(variant==="n") cls="bg-white/[0.07] border-white/[0.10] text-white/90 active:bg-white/[0.12]";
+    if(variant==="f") cls="bg-white/[0.04] border-white/[0.07] text-white/55 active:bg-white/[0.08]";
+    if(variant==="o") cls="bg-white/[0.12] border-white/[0.14] text-white active:bg-white/[0.18]";
+    if(variant==="e") cls="bg-white border-white text-black font-[600] active:bg-white/90";
+    if(variant==="s") cls="bg-violet-500/[0.14] border-violet-300/[0.14] text-violet-100 active:bg-violet-500/[0.22]";
+  }else{
+    if(variant==="n") cls="bg-white/80 border-white text-zinc-800 active:bg-white";
+    if(variant==="f") cls="bg-white/60 border-white/70 text-zinc-500 active:bg-white/80";
+    if(variant==="o") cls="bg-zinc-900 border-zinc-800 text-white active:bg-black";
+    if(variant==="e") cls="bg-zinc-900 border-zinc-900 text-white font-[600] active:bg-black";
+    if(variant==="s") cls="bg-violet-600/[0.10] border-violet-500/15 text-violet-700 active:bg-violet-600/15";
+  }
+  const glow = variant==="e" ? (dark?"bg-white/30":"bg-black/15") : variant==="s" ? "bg-violet-400/40" : "bg-violet-400/25";
+  return(
+    <div className={`relative ${span===2?"col-span-2":""}`}>
+      {g && <div className={`absolute inset-0 rounded-[18px] blur-[12px] pointer-events-none ${glow}`} style={{opacity:0.9}}/>}
+      <motion.button whileTap={{scale:0.94}} transition={{type:"spring",stiffness:800,damping:26}} onClick={tap} className={`${base} ${cls}`}>
+        {label}
+      </motion.button>
+    </div>
+  );
+});
+
+function App(){
+  const mobile=useMobile();
+  const [dark,setDark]=useState(true);
+  const [sci,setSci]=useState(false);
+  const [disp,setDisp]=useState("0");
+  const [hist,setHist]=useState("");
+  const [prev,setPrev]=useState(null);
+  const [op,setOp]=useState(null);
+  const [wait,setWait]=useState(false);
+
+  const fmt = useCallback((s)=>{
+    if(s==="Error") return "Error";
+    if(!s) return "0";
+    if(s.toLowerCase().includes("e")){const n=Number(s); return isFinite(n)? n.toExponential(5):"Error"}
+    const neg=s[0]==="-"; let a=neg?s.slice(1):s;
+    const ed=a.endsWith("."); let [i,d]=a.split(".");
+    if(!i) i="0";
+    let fi=i.length<=12? (Number(i).toLocaleString("en-US")||i) : i.replace(/\B(?=(\d{3})+(?!\d))/g,",");
+    let r=(neg?"-":"")+fi; if(s.includes(".")) r+=ed?".": d!==void 0?`.${d}`:"";
+    return r;
+  },[]);
+  const fmtH = useCallback((n)=>{
+    if(n==null) return "";
+    const num=Number(n); if(isNaN(num)) return String(n);
+    if(Math.abs(num)>=1e9 || (Math.abs(num)<1e-6 && num!==0)) return num.toExponential(3);
+    return parseFloat(num.toFixed(7)).toLocaleString("en-US",{maximumFractionDigits:7});
+  },[]);
+  const calc = (a,b,o)=>{ switch(o){case "+":return a+b; case "-":return a-b; case "×":case "*":return a*b; case "÷":case "/":return b===0?NaN:a/b; case "^":return Math.pow(a,b); default:return b;} };
+
+  const digit = useCallback((d)=>{ if(wait){ setDisp(d); setWait(false);} else { if(disp==="0"||disp==="Error") setDisp(d); else if(disp.replace(/[-.]/g,"").length<12) setDisp(disp+d);} },[disp,wait]);
+  const dot = useCallback(()=>{ if(wait){ setDisp("0."); setWait(false); return;} if(disp==="Error"){setDisp("0."); return;} if(!disp.includes(".")) setDisp(disp+"."); },[disp,wait]);
+  const clear = useCallback(()=>{ if(disp!=="0"&&disp!=="Error"&&!hist.includes("=")) setDisp("0"); else{ setDisp("0"); setHist(""); setPrev(null); setOp(null); setWait(false);} },[disp,hist]);
+  const pm = useCallback(()=>{ const v=parseFloat(disp); if(!isNaN(v)&&v!==0) setDisp(String(-v)); },[disp]);
+  const pct = useCallback(()=>{ const v=parseFloat(disp); if(!isNaN(v)){ setDisp(String(v/100)); setWait(true);} },[disp]);
+  const handleOp = useCallback((nx)=>{ const v=parseFloat(disp); if(prev===null) setPrev(v); else if(op&&!wait){ const r=calc(prev,v,op); if(isNaN(r)||!isFinite(r)){ setDisp("Error"); setHist(""); setPrev(null); setOp(null); setWait(true); return;} setPrev(r); setDisp(String(r)); } setWait(true); setOp(nx); setHist(`${fmtH(prev!==null?prev:v)} ${nx}`); },[disp,prev,op,wait,fmtH]);
+  const eq = useCallback(()=>{ const v=parseFloat(disp); if(op&&prev!==null&&!wait){ const r=calc(prev,v,op); setDisp(isNaN(r)||!isFinite(r)?"Error":String(r)); setHist(`${fmtH(prev)} ${op} ${fmtH(v)} =`); setPrev(null); setOp(null); setWait(true);} },[disp,prev,op,wait,fmtH]);
+  const sciFn = useCallback((t)=>{ const x=parseFloat(disp); if(isNaN(x)&&t!=="pi"&&t!=="e") return; let r,h=""; switch(t){case "sin":r=Math.sin(x*Math.PI/180); h=`sin(${fmtH(x)})`;break; case "cos":r=Math.cos(x*Math.PI/180); h=`cos(${fmtH(x)})`;break; case "tan":{const c=Math.cos(x*Math.PI/180); r=Math.abs(c)<1e-12?NaN:Math.tan(x*Math.PI/180); h=`tan(${fmtH(x)})`;break;} case "log":r=x>0?Math.log10(x):NaN; h=`log(${fmtH(x)})`;break; case "ln":r=x>0?Math.log(x):NaN; h=`ln(${fmtH(x)})`;break; case "sqrt":r=x>=0?Math.sqrt(x):NaN; h=`√${fmtH(x)}`;break; case "square":r=x*x; h=`${fmtH(x)}²`;break; case "cube":r=x*x*x; h=`${fmtH(x)}³`;break; case "recip":r=x!==0?1/x:NaN; h=`1/${fmtH(x)}`;break; case "pow10":r=Math.pow(10,x); h=`10^${fmtH(x)}`;break; case "exp":r=Math.exp(x); h=`exp(${fmtH(x)})`;break; case "pi":r=Math.PI; h="π";break; case "e":r=Math.E; h="e";break; case "pow":handleOp("^");return;} if(isNaN(r)||!isFinite(r)){setDisp("Error"); setHist(h); setWait(true); setPrev(null); setOp(null); return;} setDisp(String(parseFloat(r.toFixed(10)))); setHist(h); setWait(true); },[disp,fmtH]);
+
+  useEffect(()=>{
+    const k=(e)=>{ const key=e.key; if(/[0-9]/.test(key)){ e.preventDefault(); digit(key);} else if(key==="."){ e.preventDefault(); dot(); } else if(key==="+"||key==="-"){ e.preventDefault(); handleOp(key);} else if(key==="*"){ e.preventDefault(); handleOp("×"); } else if(key==="/"){ e.preventDefault(); handleOp("÷"); } else if(key==="%" ){ pct(); } else if(key==="Enter"||key==="="){ e.preventDefault(); eq(); } else if(key==="Escape"){ clear(); } else if(key==="Backspace"){ e.preventDefault(); if(!wait&&disp.length>1) setDisp(disp.slice(0,-1)); else setDisp("0"); } };
+    addEventListener("keydown",k); return()=>removeEventListener("keydown",k);
+  },[disp,wait,op,prev,hist,digit,dot,handleOp,eq,pct,clear]);
+
+  const fSize = useMemo(()=>{ const l=disp.replace(/[-.]/g,"").length; if(l>11) return "text-[26px]"; if(l>8) return "text-[32px]"; if(l>6) return "text-[36px]"; return "text-[42px] sm:text-[46px]"; },[disp]);
+
+  const sciBtns = useMemo(()=>[
+    ["sin",()=>sciFn("sin")],["cos",()=>sciFn("cos")],["tan",()=>sciFn("tan")],
+    ["log",()=>sciFn("log")],["ln",()=>sciFn("ln")],["√",()=>sciFn("sqrt")],
+    ["x²",()=>sciFn("square")],["x³",()=>sciFn("cube")],["xʸ",()=>sciFn("pow")],
+    ["¹⁄ₓ",()=>sciFn("recip")],["10ˣ",()=>sciFn("pow10")],["eˣ",()=>sciFn("exp")],
+    ["π",()=>sciFn("pi")],["e",()=>sciFn("e")],["±",pm]
+  ],[sciFn,pm]);
+
+  return(
+    <div className={`min-h-[100dvh] w-full flex items-center justify-center p-4 sm:p-6 relative overflow-hidden ${dark?"bg-[#07070B]":"bg-[#F6F5FF]"} transition-colors duration-500`}>
+      <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className={`absolute inset-0 ${dark?"bg-[#07070B]":"bg-[#F6F5FF]"}`}/>
+        <div className={`blob a1 absolute w-[760px] h-[760px] rounded-full blur-[80px] -top-[220px] -left-[200px] ${dark?"bg-violet-600/28":"bg-violet-300/50"}`}/>
+        <div className={`blob a2 absolute w-[700px] h-[700px] rounded-full blur-[80px] -bottom-[200px] -right-[180px] ${dark?"bg-indigo-600/22":"bg-sky-300/45"}`}/>
+      </div>
+
+      <motion.div initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} transition={{duration:0.4}} className={`glass relative rounded-[30px] p-[14px] sm:p-[16px] border w-[92vw] max-w-[380px] ${mobile?"":""} ${dark?"bg-[#12121A]/75 border-white/[0.08] shadow-[0_20px_60px_-18px_rgba(0,0,0,0.6)]":"bg-white/75 border-white shadow-[0_20px_60px_-20px_rgba(0,0,0,0.15)]"}`} style={{width: mobile? "min(92vw,400px)" : sci? 700:384, maxWidth: mobile? "min(92vw,400px)": sci?700:384 }}>
+        <div className="flex justify-between items-center mb-4 px-1">
+          <div className="flex items-center gap-2.5">
+            <span className={`text-[10px] font-bold tracking-[0.16em] uppercase ${dark?"text-white/40":"text-zinc-500"}`}>Scientific</span>
+            <button onClick={()=>setSci(!sci)} className={`relative w-[44px] h-[26px] rounded-full p-[3px] border ${dark?"bg-white/[0.06] border-white/10":"bg-black/5 border-black/10"}`}>
+              <motion.div animate={{x:sci?18:0}} transition={{type:"spring",stiffness:600,damping:26}} className={`w-[18px] h-[18px] rounded-full ${dark?"bg-white":"bg-zinc-900"}`}/>
+            </button>
+          </div>
+          <button onClick={()=>setDark(!dark)} className={`w-[56px] h-[30px] rounded-full p-[3px] border flex items-center ${dark?"bg-white/[0.06] border-white/10":"bg-white/80 border-white shadow"}`}>
+            <motion.div animate={{x:dark?26:0}} transition={{type:"spring",stiffness:600,damping:28}} className={`w-[22px] h-[22px] rounded-full grid place-items-center text-[11px] ${dark?"bg-white text-black":"bg-zinc-900 text-white"}`}>{dark?"☾":"☀"}</motion.div>
+          </button>
+        </div>
+
+        <div className={`rounded-[20px] px-5 py-4 mb-4 border ${dark?"bg-black/25 border-white/[0.06] shadow-[inset_0_1px_12px_rgba(0,0,0,0.5)]":"bg-white/70 border-white shadow-[inset_0_1px_8px_rgba(0,0,0,0.04)]"}`}>
+          <div className="h-[18px] flex justify-end"><p className={`mono text-[12px] truncate ${dark?"text-white/35":"text-zinc-500"}`}>{hist||"\u00A0"}</p></div>
+          <div className="h-[48px] flex items-end justify-end overflow-hidden">
+            <motion.div key={disp} initial={{y:10,opacity:0}} animate={{y:0,opacity:1}} transition={{duration:0.18}} className={`mono font-[600] leading-none text-right whitespace-nowrap ${fSize} ${dark?"text-white":"text-zinc-900"}`}>{fmt(disp)}</motion.div>
+          </div>
+        </div>
+
+        <div className={`flex gap-3 ${mobile?"flex-col":"flex-row"}`}>
+          <AnimatePresence>
+          {sci && (
+            <motion.div initial={mobile?{height:0,opacity:0}:{width:0,opacity:0}} animate={mobile?{height:"auto",opacity:1}:{width:252,opacity:1}} exit={mobile?{height:0,opacity:0}:{width:0,opacity:0}} transition={{duration:0.32,ease:"easeOut"}} className="overflow-hidden">
+              <div className="grid grid-cols-3 gap-2.5">
+                {sciBtns.map(([lb,fn])=> <Button key={lb} label={lb} onClick={fn} variant="s" dark={dark}/>)}
+              </div>
+              {mobile && <div className={`mt-4 h-px ${dark?"bg-white/5":"bg-black/5"}`}/>}
+            </motion.div>
+          )}
+          </AnimatePresence>
+
+          <div className="flex-1 grid grid-cols-4 gap-2.5">
+            <Button label={disp!=="0"&&!hist.includes("=")?"C":"AC"} onClick={clear} variant="f" dark={dark}/>
+            <Button label="±" onClick={pm} variant="f" dark={dark}/>
+            <Button label="%" onClick={pct} variant="f" dark={dark}/>
+            <Button label="÷" onClick={()=>handleOp("÷")} variant="o" dark={dark}/>
+            <Button label="7" onClick={()=>digit("7")} dark={dark}/>
+            <Button label="8" onClick={()=>digit("8")} dark={dark}/>
+            <Button label="9" onClick={()=>digit("9")} dark={dark}/>
+            <Button label="×" onClick={()=>handleOp("×")} variant="o" dark={dark}/>
+            <Button label="4" onClick={()=>digit("4")} dark={dark}/>
+            <Button label="5" onClick={()=>digit("5")} dark={dark}/>
+            <Button label="6" onClick={()=>digit("6")} dark={dark}/>
+            <Button label="−" onClick={()=>handleOp("-")} variant="o" dark={dark}/>
+            <Button label="1" onClick={()=>digit("1")} dark={dark}/>
+            <Button label="2" onClick={()=>digit("2")} dark={dark}/>
+            <Button label="3" onClick={()=>digit("3")} dark={dark}/>
+            <Button label="+" onClick={()=>handleOp("+")} variant="o" dark={dark}/>
+            <Button label="0" onClick={()=>digit("0")} span={2} dark={dark}/>
+            <Button label="." onClick={dot} dark={dark}/>
+            <Button label="=" onClick={eq} variant="e" dark={dark}/>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
