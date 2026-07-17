@@ -1,1 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ZenexCal™</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+*{ -webkit-font-smoothing:antialiased; }
+body{font-family:'Inter',sans-serif; background:#07070B; overscroll-behavior:none;}
+.mono{font-family:'JetBrains Mono',monospace}
+::-webkit-scrollbar{display:none}
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+.blob{will-change:transform; transform:translateZ(0)}
+@keyframes f1{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(70px,-60px,0) scale(1.08)}}
+@keyframes f2{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-60px,50px,0) scale(1.06)}}
+.a1{animation:f1 18s ease-in-out infinite}
+.a2{animation:f2 22s ease-in-out infinite}
+.glass{-webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+const {motion,LayoutGroup}=window.Motion;
 
+const pad=n=>String(n).padStart(2,'0');
+const toStr=(y,m,d)=>`${y}-${pad(m+1)}-${pad(d)}`;
+const addMonths=(y,m,off)=>{const d=new Date(y,m+off,1); return {y:d.getFullYear(), m:d.getMonth()};};
+const genMonths=(sy,sm,count)=>{const a=[]; for(let i=0;i<count;i++){const {y,m}=addMonths(sy,sm,i); a.push({y,m,id:`${y}-${m}`});} return a;};
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+const Day=React.memo(function({day,out,dateStr,isToday,isSel,onSelect}){
+  return(
+    <button onClick={()=>onSelect(dateStr)} className={`relative h-[58px] sm:h-[62px] rounded-[16px] border text-left p-[10px] flex flex-col transition-colors ${out? "bg-white/[0.02] border-white/[0.04] text-white/20" : isSel? "bg-white border-white text-black shadow-[0_12px_28px_-14px_rgba(255,255,255,0.8)]" : isToday? "bg-violet-500/20 border-violet-400/25 text-white" : "bg-white/[0.05] border-white/[0.07] text-white/75 hover:bg-white/[0.09] hover:text-white"}`}>
+      <span className="text-[13px] font-[600] leading-none">{day}</span>
+      {isToday&&!isSel && <span className="absolute bottom-[9px] left-[10px] w-1 h-1 rounded-full bg-violet-300"/>}
+      {isSel && <motion.div layoutId="selDay" className="absolute inset-0 rounded-[16px] border-[1.5px] border-black/10 pointer-events-none" transition={{type:"spring",stiffness:600,damping:30}}/>}
+    </button>
+  );
+});
+
+const MonthBlock=React.memo(function({y,m,selStr,onSelect,todayStr,visibleRef}){
+  const first=new Date(y,m,1).getDay();
+  const off=first===0?6:first-1;
+  const dim=new Date(y,m+1,0).getDate();
+  const pdim=new Date(y,m,0).getDate();
+  const cells=[];
+  for(let i=0;i<off;i++){ const d=pdim-off+1+i; const {y:py,m:pm}=addMonths(y,m,-1); cells.push({day:d,out:true,s:toStr(py,pm,d)}); }
+  for(let d=1; d<=dim; d++) cells.push({day:d,out:false,s:toStr(y,m,d)});
+  const rem=42-cells.length;
+  for(let d=1; d<=rem; d++){ const {y:ny,m:nm}=addMonths(y,m,1); cells.push({day:d,out:true,s:toStr(ny,nm,d)}); }
+  return(
+    <div ref={el=>{ if(el&&visibleRef) visibleRef.current[`${y}-${m}`]=el; }} data-month={`${y}-${m}`} className="mb-10">
+      <div className="sticky top-0 z-10 -mx-1 px-4 py-[13px] rounded-[14px] glass bg-[#12121A]/85 border border-white/[0.06] flex items-center justify-between">
+        <h3 className="text-[14px] font-[700] tracking-[-0.02em] text-white">{MONTHS[m]} {y}</h3>
+        <div className="flex items-center gap-1.5"><div className="w-1 h-1 rounded-full bg-white/20"/><div className="w-1 h-1 rounded-full bg-white/10"/><div className="w-1 h-1 rounded-full bg-white/10"/></div>
+      </div>
+      <div className="grid grid-cols-7 gap-[8px] mt-3">
+        {cells.map(c=><Day key={c.s} day={c.day} out={c.out} dateStr={c.s} isToday={c.s===todayStr} isSel={c.s===selStr} onSelect={onSelect}/>)}
+      </div>
+    </div>
+  );
+});
+
+function App(){
+  const now=new Date();
+  const [months,setMonths]=useState(()=>{const s=addMonths(now.getFullYear(),now.getMonth(),-6); return genMonths(s.y,s.m,13);});
+  const todayStr=toStr(now.getFullYear(),now.getMonth(),now.getDate());
+  const [sel,setSel]=useState(todayStr);
+  const [jumpY,setJumpY]=useState(String(now.getFullYear()));
+  const [jumpM,setJumpM]=useState(String(now.getMonth()));
+  const scrollRef=useRef(null);
+  const visibleMap=useRef({});
+  const [visibleTitle,setVisibleTitle]=useState(new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'}));
+  const init=useRef(false);
+
+  useEffect(()=>{
+    if(!init.current){
+      init.current=true;
+      const el=scrollRef.current;
+      if(el) setTimeout(()=>{
+        const y=now.getFullYear(); const m=now.getMonth();
+        const target=document.querySelector(`[data-month="${y}-${m}"]`);
+        if(target) el.scrollTo({top: target.offsetTop - 8, behavior:'auto'});
+        else el.scrollTop=6*388;
+      },100);
+    }
+  },[]);
+
+  const handleScroll=useCallback(()=>{
+    const el=scrollRef.current; if(!el) return;
+    if(el.scrollTop<420){
+      const f=months[0]; const nm=genMonths(f.y,f.m-6,6);
+      const ph=el.scrollHeight;
+      setMonths(p=>[...nm,...p]);
+      requestAnimationFrame(()=>{ el.scrollTop+= el.scrollHeight - ph; });
+    }
+    if(el.scrollTop + el.clientHeight > el.scrollHeight - 520){
+      const l=months[months.length-1]; const nm=genMonths(l.y,l.m+1,6);
+      setMonths(p=>[...p,...nm]);
+    }
+  },[months]);
+
+  useEffect(()=>{
+    const el=scrollRef.current; if(!el) return;
+    let t=false;
+    const fn=()=>{ if(!t){ t=true; requestAnimationFrame(()=>{handleScroll(); t=false;}); } };
+    el.addEventListener('scroll',fn,{passive:true});
+    return()=>el.removeEventListener('scroll',fn);
+  },[handleScroll]);
+
+  useEffect(()=>{
+    const el=scrollRef.current; if(!el) return;
+    const obs=new IntersectionObserver((entries)=>{
+      const vis=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top - b.boundingClientRect.top);
+      if(vis[0]){ const id=vis[0].target.getAttribute('data-month'); if(id){ const [y,m]=id.split('-').map(Number); setVisibleTitle(`${MONTHS[m]} ${y}`); } }
+    },{root:el, threshold:0.15, rootMargin:"-80px 0px -60% 0px"});
+    Object.values(visibleMap.current).forEach(n=>{ if(n) obs.observe(n); });
+    return()=>obs.disconnect();
+  },[months]);
+
+  const goTo=useCallback(()=>{
+    const y=parseInt(jumpY,10);
+    const m=parseInt(jumpM,10);
+    if(isNaN(y)||y<1||y>9999) return;
+    if(isNaN(m)||m<0||m>11) return;
+    const s=addMonths(y,m,-6);
+    const nm=genMonths(s.y,s.m,13);
+    setMonths(nm);
+    setVisibleTitle(`${MONTHS[m]} ${y}`);
+    // don't auto-select 1st - remove white button bug
+    setTimeout(()=>{
+      const el=scrollRef.current;
+      if(!el) return;
+      const target=document.querySelector(`[data-month="${y}-${m}"]`);
+      if(target){
+        el.scrollTo({top: target.offsetTop - 8, behavior:'auto'});
+      } else {
+        el.scrollTo({top:6*388, behavior:'auto'});
+      }
+    },120);
+  },[jumpY,jumpM]);
+
+  const selObj=useMemo(()=>{const [y,mo,d]=sel.split('-').map(Number); return new Date(y,mo-1,d);},[sel]);
+  const week=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+  return(
+    <div className="min-h-[100dvh] w-full flex items-center justify-center p-3 sm:p-6 relative overflow-hidden bg-[#07070B]">
+      <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute w-[780px] h-[780px] rounded-full blur-[90px] -top-[240px] -left-[200px] bg-violet-600/25 blob a1"/>
+        <div className="absolute w-[720px] h-[720px] rounded-full blur-[90px] -bottom-[220px] -right-[200px] bg-indigo-600/20 blob a2"/>
+      </div>
+
+      <motion.div initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} transition={{duration:0.4}} className="glass w-[98vw] sm:w-[94vw] max-w-[1120px] h-[92dvh] sm:h-[86vh] rounded-[28px] border border-white/[0.08] bg-[#11111A]/85 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col">
+        <div className="min-h-[64px] shrink-0 px-4 sm:px-6 flex items-center justify-between border-b border-white/[0.07] bg-black/20 backdrop-blur-xl gap-3">
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-8 h-8 rounded-[10px] bg-white text-black grid place-items-center font-[800] text-[13px]">Z</div>
+            <div className="hidden sm:block">
+              <p className="text-[14px] font-[700] tracking-[-0.02em] text-white leading-none">ZenexCal™</p>
+              <p className="text-[11px] font-[500] text-white/40 leading-none mt-1">{visibleTitle}</p>
+            </div>
+            <span className="sm:hidden text-[13px] font-[600] text-white/70">{visibleTitle}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-white/[0.06] border border-white/[0.08]">
+              <input value={jumpM} onChange={e=>setJumpM(e.target.value)} type="hidden"/>
+              <select value={jumpM} onChange={e=>setJumpM(e.target.value)} className="h-8 bg-transparent text-white text-[12px] font-[600] px-2.5 pr-6 rounded-full outline-none border border-white/10 focus:border-white/20 appearance-none cursor-pointer">
+                {MONTHS.map((mm,i)=><option key={mm} value={String(i)} className="bg-[#12121A] text-white">{mm.slice(0,3)}</option>)}
+              </select>
+              <input value={jumpY} onChange={e=>setJumpY(e.target.value)} type="number" placeholder="Year" className="w-[68px] sm:w-[84px] h-8 bg-[#0E0E15] border border-white/10 rounded-full px-3 text-[12px] font-[600] text-white placeholder:text-white/25 outline-none focus:border-white/20 text-center"/>
+              <button onClick={goTo} className="h-8 px-4 rounded-full bg-white text-black text-[12px] font-[700] hover:bg-white/90 transition flex items-center gap-1">Go <span className="text-[14px]">→</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="grid grid-cols-7 gap-[8px] px-4 sm:px-6 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+              {week.map(d=><span key={d} className="text-[11px] font-[700] tracking-[0.08em] uppercase text-center text-white/30">{d}</span>)}
+            </div>
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 sm:px-5 py-4">
+              <LayoutGroup>
+                {months.map(mm=> <MonthBlock key={mm.id} y={mm.y} m={mm.m} selStr={sel} onSelect={setSel} todayStr={todayStr} visibleRef={visibleMap}/>)}
+              </LayoutGroup>
+            </div>
+          </div>
+
+          <div className="hidden lg:flex w-[300px] shrink-0 border-l border-white/[0.07] bg-black/20 flex-col p-6">
+            <p className="text-[11px] font-[700] tracking-[0.16em] uppercase text-white/40">{selObj.toLocaleDateString('en-US',{weekday:'long'})}</p>
+            <h2 className="text-[56px] font-[800] leading-[0.85] tracking-[-0.06em] text-white mt-3">{selObj.getDate()}</h2>
+            <p className="text-[16px] font-[600] text-white/60 mt-2">{selObj.toLocaleDateString('en-US',{month:'long', year:'numeric'})}</p>
+
+            <div className="mt-8 p-4 rounded-[16px] bg-white/[0.05] border border-white/[0.08] space-y-3">
+              <div className="flex justify-between text-[12px]"><span className="text-white/30">Day of year</span><span className="font-[600] text-white/70">{Math.floor((selObj - new Date(selObj.getFullYear(),0,0))/86400000)}</span></div>
+              <div className="h-px bg-white/10"/>
+              <div className="flex justify-between text-[12px]"><span className="text-white/30">Week</span><span className="font-[600] text-white/70">{Math.ceil((((selObj - new Date(selObj.getFullYear(),0,1))/86400000) + new Date(selObj.getFullYear(),0,1).getDay()+1)/7)}</span></div>
+              <div className="h-px bg-white/10"/>
+              <div className="flex justify-between text-[12px]"><span className="text-white/30">Quarter</span><span className="font-[600] text-white/70">Q{Math.floor(selObj.getMonth()/3)+1}</span></div>
+            </div>
+
+            <div className="mt-auto">
+              <div className="rounded-[14px] bg-white/[0.04] border border-white/[0.06] p-3.5 flex items-center justify-between">
+                <span className="text-[11px] font-[600] text-white/30 uppercase tracking-wide">Selected</span>
+                <span className="mono text-[11px] text-white/70">{sel}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
